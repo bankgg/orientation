@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Aircraft Orientation Test</title>
+    <!-- Mobile-first -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, shrink-to-fit=no"
+    />
+
+    <!-- Bootstrap CSS -->
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/bootstrap@4.5.2/dist/css/bootstrap.min.css"
+    />
+    <!-- jQuery -->
+    <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.5.2/dist/js/bootstrap.bundle.min.js"></script>
+
+    <style>
+      .airplane-icon {
+        width: 32px;
+        transition: transform 0.3s ease;
+      }
+      .card.border-success {
+        border: 2px solid #28a745 !important;
+      }
+      .card.border-danger {
+        border: 2px solid #dc3545 !important;
+      }
+      /* Button coloring on submit */
+      .choice-btn.correct {
+        background-color: #28a745 !important;
+        color: white !important;
+        border-color: #28a745 !important;
+      }
+      .choice-btn.wrong {
+        background-color: #dc3545 !important;
+        color: white !important;
+        border-color: #dc3545 !important;
+      }
+      .choice-btn.active {
+        outline: 2px solid #007bff; /* highlight selected choice before submit */
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container mt-4">
+      <h1>Orientation Test</h1>
+
+      <div class="mb-3">
+        <button id="startTimer" class="btn btn-primary">Start Timer</button>
+        <span id="timer" class="ml-3 font-weight-bold">00:00</span>
+      </div>
+
+      <div id="questions"></div>
+
+      <button id="submitBtn" class="btn btn-success mt-3">Submit</button>
+    </div>
+
+    <!-- Result Modal -->
+    <div
+      class="modal fade"
+      id="resultModal"
+      tabindex="-1"
+      role="dialog"
+      aria-labelledby="resultModalTitle"
+      aria-hidden="true"
+    >
+      <div class="modal-dialog modal-dialog-centered" role="document">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="resultModalTitle">Test Results</h5>
+            <button
+              type="button"
+              class="close"
+              data-dismiss="modal"
+              aria-label="Close"
+            >
+              <span aria-hidden="true">&times;</span>
+            </button>
+          </div>
+          <div class="modal-body">
+            <p id="resultText"></p>
+          </div>
+          <div class="modal-footer">
+            <button
+              type="button"
+              class="btn btn-secondary"
+              data-dismiss="modal"
+            >
+              OK
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      let timerInterval = null;
+      let secondsElapsed = 0;
+
+      // Keep track of user-selected answers: { [questionIndex]: "choiceText" }
+      let userAnswers = {};
+
+      // Generate a random multiple of 45 up to max (default 720)
+      function generateRandomMultipleOf45(max = 720) {
+        let multiples = [];
+        for (let i = 45; i <= max; i += 45) {
+          multiples.push(i);
+        }
+        return multiples[Math.floor(Math.random() * multiples.length)];
+      }
+
+      // Randomly pick "Left" or "Right", but we’ll store as "L" or "R"
+      function generateRandomDirection() {
+        return Math.random() < 0.5 ? "L" : "R";
+      }
+
+      // Format rotation as "0" or "<deg>L" / "<deg>R"
+      function formatRotation(deg, dir) {
+        if (deg === 0) return "0";
+        return deg + dir; // e.g. "90R", "180L"
+      }
+
+      // Apply rotation to a heading (0..359), either L or R
+      function applyRotation(currentHeading, rotation, direction) {
+        if (direction === "R") {
+          return (currentHeading + rotation) % 360;
+        } else {
+          // direction === "L"
+          return (currentHeading - rotation + 360) % 360;
+        }
+      }
+
+      // Determine minimal rotation from current heading to target heading => "0", "90R", "135L", etc.
+      function getRotationFromTo(current, target) {
+        let diff = (target - current + 360) % 360;
+        if (diff === 0) {
+          return "0";
+        } else if (diff <= 180) {
+          return diff + "R";
+        } else {
+          return 360 - diff + "L";
+        }
+      }
+
+      // Generate one question
+      function generateQuestion(index) {
+        // 1) Random initial heading (multiples of 45: 0..315)
+        let initialHeading = 45 * Math.floor(Math.random() * 8);
+
+        // 2) Generate 5 random steps
+        let currentHeading = initialHeading;
+        let steps = [];
+        for (let i = 0; i < 5; i++) {
+          let rot = generateRandomMultipleOf45();
+          let dir = generateRandomDirection();
+          steps.push(formatRotation(rot, dir));
+          currentHeading = applyRotation(
+            currentHeading,
+            rot,
+            dir === "R" ? "R" : "L"
+          );
+        }
+
+        // 3) Random final heading (multiples of 45: 0..315)
+        let finalHeading = 45 * Math.floor(Math.random() * 8);
+
+        // 4) Compute correct minimal rotation
+        let correctAnswer = getRotationFromTo(currentHeading, finalHeading);
+
+        // 5) Generate 4 random distractors
+        let choices = [];
+        function randomAnswer() {
+          let deg = generateRandomMultipleOf45();
+          let dir = generateRandomDirection();
+          return formatRotation(deg, dir);
+        }
+        for (let i = 0; i < 4; i++) {
+          let ans = randomAnswer();
+          // ensure no duplicates and not the correctAnswer
+          while (choices.includes(ans) || ans === correctAnswer) {
+            ans = randomAnswer();
+          }
+          choices.push(ans);
+        }
+
+        // Place correct answer among the first 4 (a-d)
+        let correctIndex = Math.floor(Math.random() * 4);
+        choices[correctIndex] = correctAnswer;
+
+        return {
+          index,
+          initialHeading,
+          steps,
+          finalHeading,
+          correctAnswer,
+          realCorrectAnswer: correctAnswer, // store the real rotation in case we override with "None"
+          choices,
+        };
+      }
+
+      // Generate all questions
+      function generateAllQuestions(count = 30) {
+        let questions = [];
+        for (let i = 0; i < count; i++) {
+          questions.push(generateQuestion(i + 1));
+        }
+
+        // Enforce ~25% have correct answer "None"
+        let noneCount = Math.floor(count * 0.25);
+        let usedIndexes = [];
+        while (usedIndexes.length < noneCount) {
+          let r = Math.floor(Math.random() * count);
+          if (!usedIndexes.includes(r)) {
+            usedIndexes.push(r);
+          }
+        }
+
+        usedIndexes.forEach((idx) => {
+          let q = questions[idx];
+          // Save the actual rotation
+          q.noneActualAnswer = q.correctAnswer;
+          // Overwrite correct answer with "None"
+          q.correctAnswer = "None";
+          // Overwrite the 4 choices with random distractors that do NOT match q.noneActualAnswer
+          let newChoices = [];
+          while (newChoices.length < 4) {
+            let ans = randomAnswer();
+            if (!newChoices.includes(ans) && ans !== q.noneActualAnswer) {
+              newChoices.push(ans);
+            }
+          }
+          q.choices = newChoices;
+        });
+
+        return questions;
+      }
+
+      // Random answer generator for the "None" scenario
+      function randomAnswer() {
+        let deg = generateRandomMultipleOf45();
+        let dir = generateRandomDirection();
+        return formatRotation(deg, dir);
+      }
+
+      // Render the questions in HTML
+      function renderQuestions(questions) {
+        let html = "";
+        questions.forEach((q) => {
+          html += `
+      <div class="card mb-3" id="question-${q.index}">
+        <div class="card-header">
+          Question ${q.index}
+        </div>
+        <div class="card-body">
+          <!-- New layout: 7 items in a row with equal spacing -->
+          <div class="d-flex justify-content-around align-items-center w-100 flex-wrap mb-3">
+            <div class="p-1 text-center">
+              <img src="airplane.png" class="airplane-icon" style="transform: rotate(${q.initialHeading}deg);" />
+            </div>
+            <div class="p-1 text-center">
+              <span class="badge badge-primary">${q.steps[0]}</span>
+            </div>
+            <div class="p-1 text-center">
+              <span class="badge badge-primary">${q.steps[1]}</span>
+            </div>
+            <div class="p-1 text-center">
+              <span class="badge badge-primary">${q.steps[2]}</span>
+            </div>
+            <div class="p-1 text-center">
+              <span class="badge badge-primary">${q.steps[3]}</span>
+            </div>
+            <div class="p-1 text-center">
+              <span class="badge badge-primary">${q.steps[4]}</span>
+            </div>
+            <div class="p-1 text-center">
+              <img src="airplane.png" class="airplane-icon" style="transform: rotate(${q.finalHeading}deg);" />
+            </div>
+          </div>
+
+          <div class="btn-group-vertical w-100" role="group">
+      `;
+
+          let labels = ["a", "b", "c", "d", "e"];
+          for (let i = 0; i < 5; i++) {
+            let choiceText = i < 4 ? q.choices[i] : "None";
+            html += `
+            <button type="button" 
+                    class="btn btn-sm btn-outline-primary choice-btn text-left mb-1"
+                    data-qindex="${q.index}" 
+                    data-choice="${choiceText}">
+              ${labels[i]}) ${choiceText}
+            </button>
+        `;
+          }
+
+          html += `
+          </div>
+        </div>
+      </div>
+      `;
+        });
+
+        $("#questions").html(html);
+
+        // Attach click handlers for each choice button
+        $(".choice-btn").click(function () {
+          let qIndex = $(this).data("qindex");
+          let choiceValue = $(this).data("choice");
+          // store user selection
+          userAnswers[qIndex] = choiceValue;
+
+          // visually mark selected button
+          $(this)
+            .closest(".btn-group-vertical")
+            .find(".choice-btn")
+            .removeClass("active");
+          $(this).addClass("active");
+        });
+      }
+
+      // Timer functions
+      function startTimer() {
+        if (timerInterval) {
+          clearInterval(timerInterval);
+        }
+        secondsElapsed = 0;
+        $("#timer").text("00:00");
+
+        timerInterval = setInterval(() => {
+          secondsElapsed++;
+          let minutes = Math.floor(secondsElapsed / 60);
+          let seconds = secondsElapsed % 60;
+          let mm = minutes < 10 ? "0" + minutes : minutes;
+          let ss = seconds < 10 ? "0" + seconds : seconds;
+          $("#timer").text(`${mm}:${ss}`);
+        }, 1000);
+      }
+
+      function stopTimer() {
+        if (timerInterval) {
+          clearInterval(timerInterval);
+          timerInterval = null;
+        }
+      }
+
+      $(document).ready(function () {
+        let questions = generateAllQuestions(30);
+        renderQuestions(questions);
+
+        // Start timer
+        $("#startTimer").click(function () {
+          startTimer();
+        });
+
+        // Submit button
+        $("#submitBtn").click(function () {
+          stopTimer();
+
+          // Evaluate answers
+          let correctCount = 0;
+          questions.forEach((q) => {
+            let selected = userAnswers[q.index] || null; // user’s choice or null if not chosen
+            let correct = q.correctAnswer;
+            let questionCard = $(`#question-${q.index}`);
+
+            // Mark the card border
+            if (selected === correct) {
+              correctCount++;
+              questionCard
+                .removeClass("border-danger")
+                .addClass("border-success");
+            } else {
+              questionCard
+                .removeClass("border-success")
+                .addClass("border-danger");
+            }
+
+            // Find all choice buttons in this question
+            let btnGroup = questionCard.find(".choice-btn");
+            btnGroup.each(function () {
+              let btnChoice = $(this).data("choice");
+              // Remove the 'active' class to reset after submission
+              $(this).removeClass("active");
+
+              // If this button was the user’s selection
+              if (btnChoice === selected) {
+                // correct or wrong highlight
+                if (selected === correct) {
+                  $(this).addClass("correct");
+                } else {
+                  $(this).addClass("wrong");
+                }
+              }
+
+              // Always highlight the correct button in green
+              if (btnChoice === correct) {
+                $(this).addClass("correct");
+                // If "None" is correct, also display the actual rotation
+                if (correct === "None" && q.noneActualAnswer) {
+                  let labelText = $(this).text();
+                  if (!labelText.includes("(Actual:")) {
+                    $(this).text(
+                      labelText + " (Actual: " + q.noneActualAnswer + ")"
+                    );
+                  }
+                }
+              }
+            });
+          });
+
+          // Calculate the percentage
+          let totalQuestions = questions.length;
+          let percentage = ((correctCount / totalQuestions) * 100).toFixed(1); // 1 decimal
+
+          // Show results in modal
+          let minutes = Math.floor(secondsElapsed / 60);
+          let seconds = secondsElapsed % 60;
+          let mm = minutes < 10 ? "0" + minutes : minutes;
+          let ss = seconds < 10 ? "0" + seconds : seconds;
+          let timeString = `${mm}:${ss}`;
+
+          let resultMsg = `Time: ${timeString}<br/>
+                       Correct: ${correctCount}/${totalQuestions} (${percentage}%)`;
+          $("#resultText").html(resultMsg);
+
+          // Scroll to top
+          window.scrollTo(0, 0);
+
+          // Show modal
+          $("#resultModal").modal("show");
+        });
+      });
+    </script>
+  </body>
+</html>
