@@ -104,9 +104,49 @@
     <script>
       let timerInterval = null;
       let secondsElapsed = 0;
-      // Store user answers as an object with keys as stringified question indices
+      // Store user answers as an object (keys are question indices as strings)
       let userAnswers = {};
 
+      /* --- Helper functions for answer normalization and comparison --- */
+
+      // Parse an answer string (like "495R" or "180L" or "0") and return an object.
+      // For non-zero answers, we return the normalized degree (mod 360).
+      // If the normalized degree is 0, we return 0.
+      // For the ambiguous case when moddeg === 180, we mark the direction as "amb".
+      function parseAnswer(ans) {
+        if (ans === "0") return { deg: 0, dir: "" };
+        let match = ans.match(/^(\d+)([LR])$/);
+        if (!match) return null;
+        let num = parseInt(match[1], 10);
+        let dir = match[2];
+        let moddeg = num % 360;
+        if (moddeg === 0) return { deg: 0, dir: "" };
+        // Mark ambiguous if moddeg is 180.
+        if (moddeg === 180) {
+          return { deg: 180, dir: "amb" };
+        }
+        return { deg: moddeg, dir: dir };
+      }
+
+      // Compare two answer strings for equivalence after normalization.
+      function answersEqual(ans1, ans2) {
+        let a = parseAnswer(ans1);
+        let b = parseAnswer(ans2);
+        if (!a || !b) return false;
+        return (
+          a.deg === b.deg && (a.deg === 0 || a.deg === 180 || a.dir === b.dir)
+        );
+      }
+
+      // Check if an answer is ambiguous (i.e. normalized degree equals 180)
+      function isAmbiguous(ans) {
+        let a = parseAnswer(ans);
+        return a && a.deg === 180;
+      }
+
+      /* --- End helper functions --- */
+
+      // Generate a random multiple of 45 up to max (default 720)
       function generateRandomMultipleOf45(max = 720) {
         let multiples = [];
         for (let i = 45; i <= max; i += 45) {
@@ -115,15 +155,18 @@
         return multiples[Math.floor(Math.random() * multiples.length)];
       }
 
+      // Randomly pick "L" or "R"
       function generateRandomDirection() {
         return Math.random() < 0.5 ? "L" : "R";
       }
 
+      // Format rotation as "0" or "<deg><dir>" (e.g., "90R", "180L")
       function formatRotation(deg, dir) {
         if (deg === 0) return "0";
-        return deg + dir; // e.g., "90R", "180L"
+        return deg + dir;
       }
 
+      // Apply rotation to a heading (0..359), using the provided rotation and direction.
       function applyRotation(currentHeading, rotation, direction) {
         if (direction === "R") {
           return (currentHeading + rotation) % 360;
@@ -132,6 +175,9 @@
         }
       }
 
+      // Determine minimal rotation from current heading to target heading.
+      // Returns "0" if no rotation needed,
+      // Otherwise, returns diff+"R" if diff<=180, else (360-diff)+"L".
       function getRotationFromTo(current, target) {
         let diff = (target - current + 360) % 360;
         if (diff === 0) {
@@ -143,8 +189,12 @@
         }
       }
 
+      // Generate one question object.
       function generateQuestion(index) {
+        // 1) Random initial heading (multiples of 45: 0..315)
         let initialHeading = 45 * Math.floor(Math.random() * 8);
+
+        // 2) Generate 5 random steps.
         let currentHeading = initialHeading;
         let steps = [];
         for (let i = 0; i < 5; i++) {
@@ -153,9 +203,14 @@
           steps.push(formatRotation(rot, dir));
           currentHeading = applyRotation(currentHeading, rot, dir);
         }
+
+        // 3) Random final heading (multiples of 45: 0..315)
         let finalHeading = 45 * Math.floor(Math.random() * 8);
+
+        // 4) Compute correct minimal rotation.
         let correctAnswer = getRotationFromTo(currentHeading, finalHeading);
 
+        // 5) Generate 4 random distractors.
         let choices = [];
         function randomAnswer() {
           let deg = generateRandomMultipleOf45();
@@ -164,11 +219,16 @@
         }
         for (let i = 0; i < 4; i++) {
           let ans = randomAnswer();
-          while (choices.includes(ans) || ans === correctAnswer) {
+          // Reject if the candidate is already in choices OR is equivalent to the correct answer.
+          while (
+            choices.some((c) => answersEqual(c, ans)) ||
+            answersEqual(ans, correctAnswer)
+          ) {
             ans = randomAnswer();
           }
           choices.push(ans);
         }
+        // Place the correct answer among the first four choices (a-d).
         let correctIndex = Math.floor(Math.random() * 4);
         choices[correctIndex] = correctAnswer;
 
@@ -177,17 +237,19 @@
           initialHeading,
           steps,
           finalHeading,
-          correctAnswer,
-          realCorrectAnswer: correctAnswer,
+          correctAnswer, // this is the normalized correct answer string (e.g., "135R" or "180R")
+          realCorrectAnswer: correctAnswer, // stored for potential "None" questions
           choices,
         };
       }
 
+      // Generate all questions.
       function generateAllQuestions(count = 30) {
         let questions = [];
         for (let i = 0; i < count; i++) {
           questions.push(generateQuestion(i + 1));
         }
+        // Enforce ~25% of questions have correct answer "None".
         let noneCount = Math.floor(count * 0.25);
         let usedIndexes = [];
         while (usedIndexes.length < noneCount) {
@@ -203,7 +265,10 @@
           let newChoices = [];
           while (newChoices.length < 4) {
             let ans = randomAnswer();
-            if (!newChoices.includes(ans) && ans !== q.noneActualAnswer) {
+            if (
+              !newChoices.some((c) => answersEqual(c, ans)) &&
+              !answersEqual(ans, q.noneActualAnswer)
+            ) {
               newChoices.push(ans);
             }
           }
@@ -212,12 +277,14 @@
         return questions;
       }
 
+      // Random answer generator used for "None" questions.
       function randomAnswer() {
         let deg = generateRandomMultipleOf45();
         let dir = generateRandomDirection();
         return formatRotation(deg, dir);
       }
 
+      // Render questions in HTML.
       function renderQuestions(questions) {
         let html = "";
         questions.forEach((q) => {
@@ -225,6 +292,7 @@
       <div class="card mb-3" id="question-${q.index}">
         <div class="card-header">Question ${q.index}</div>
         <div class="card-body">
+          <!-- Row of 7 items: original airplane, 5 steps, final airplane -->
           <div class="d-flex justify-content-around align-items-center w-100 flex-wrap mb-3">
             <div class="p-1 text-center">
               <img src="airplane.png" class="airplane-icon" style="transform: rotate(${q.initialHeading}deg);" />
@@ -272,7 +340,7 @@
         });
         $("#questions").html(html);
 
-        // Use .attr() to read the attributes so that type conversion issues are avoided
+        // Use .attr() to get the attributes so that type conversion issues are avoided.
         $(".choice-btn").click(function () {
           let qIndex = $(this).attr("data-qindex");
           let choiceValue = $(this).attr("data-choice");
@@ -285,6 +353,7 @@
         });
       }
 
+      // Timer functions.
       function startTimer() {
         if (timerInterval) {
           clearInterval(timerInterval);
@@ -323,7 +392,13 @@
             let selected = userAnswers[String(q.index)] || null;
             let correct = q.correctAnswer;
             let questionCard = $(`#question-${q.index}`);
-            if (selected === correct) {
+            // Compare using our normalization comparison
+            if (
+              selected !== null &&
+              (correct === "None"
+                ? selected === "None"
+                : answersEqual(selected, correct))
+            ) {
               correctCount++;
               questionCard
                 .removeClass("border-danger")
@@ -337,21 +412,30 @@
               let btnChoice = $(this).attr("data-choice");
               $(this).removeClass("active");
               if (btnChoice === selected) {
-                if (selected === correct) {
+                if (
+                  correct === "None"
+                    ? selected === "None"
+                    : answersEqual(btnChoice, correct)
+                ) {
                   $(this).addClass("correct");
                 } else {
                   $(this).addClass("wrong");
                 }
               }
-              if (btnChoice === correct) {
+              if (correct !== "None" && answersEqual(btnChoice, correct)) {
                 $(this).addClass("correct");
-                if (correct === "None" && q.noneActualAnswer) {
-                  let labelText = $(this).text();
-                  if (!labelText.includes("(Actual:")) {
-                    $(this).text(
-                      labelText + " (Actual: " + q.noneActualAnswer + ")"
-                    );
-                  }
+              }
+              // For "None" questions, also show the actual rotation.
+              if (
+                correct === "None" &&
+                btnChoice === "None" &&
+                q.noneActualAnswer
+              ) {
+                let labelText = $(this).text();
+                if (!labelText.includes("(Actual:")) {
+                  $(this).text(
+                    labelText + " (Actual: " + q.noneActualAnswer + ")"
+                  );
                 }
               }
             });
