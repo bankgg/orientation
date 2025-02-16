@@ -42,7 +42,7 @@
         border-color: #dc3545 !important;
       }
       .choice-btn.active {
-        outline: 2px solid #007bff; /* highlight selected choice before submit */
+        outline: 2px solid #007bff;
       }
     </style>
   </head>
@@ -57,7 +57,7 @@
 
       <div id="questions"></div>
 
-      <!-- Submit button takes full width and has margin at the bottom -->
+      <!-- Full-width submit button with extra bottom margin -->
       <button id="submitBtn" class="btn btn-success btn-block mt-3 mb-3">
         Submit
       </button>
@@ -104,11 +104,9 @@
     <script>
       let timerInterval = null;
       let secondsElapsed = 0;
-
-      // Keep track of user-selected answers: { [questionIndex]: "choiceText" }
+      // Store user answers as an object with keys as stringified question indices
       let userAnswers = {};
 
-      // Generate a random multiple of 45 up to max (default 720)
       function generateRandomMultipleOf45(max = 720) {
         let multiples = [];
         for (let i = 45; i <= max; i += 45) {
@@ -117,28 +115,23 @@
         return multiples[Math.floor(Math.random() * multiples.length)];
       }
 
-      // Randomly pick "Left" or "Right", but we’ll store as "L" or "R"
       function generateRandomDirection() {
         return Math.random() < 0.5 ? "L" : "R";
       }
 
-      // Format rotation as "0" or "<deg>L" / "<deg>R"
       function formatRotation(deg, dir) {
         if (deg === 0) return "0";
-        return deg + dir; // e.g. "90R", "180L"
+        return deg + dir; // e.g., "90R", "180L"
       }
 
-      // Apply rotation to a heading (0..359), either L or R
       function applyRotation(currentHeading, rotation, direction) {
         if (direction === "R") {
           return (currentHeading + rotation) % 360;
         } else {
-          // direction === "L"
           return (currentHeading - rotation + 360) % 360;
         }
       }
 
-      // Determine minimal rotation from current heading to target heading => "0", "90R", "135L", etc.
       function getRotationFromTo(current, target) {
         let diff = (target - current + 360) % 360;
         if (diff === 0) {
@@ -150,32 +143,19 @@
         }
       }
 
-      // Generate one question
       function generateQuestion(index) {
-        // 1) Random initial heading (multiples of 45: 0..315)
         let initialHeading = 45 * Math.floor(Math.random() * 8);
-
-        // 2) Generate 5 random steps
         let currentHeading = initialHeading;
         let steps = [];
         for (let i = 0; i < 5; i++) {
           let rot = generateRandomMultipleOf45();
           let dir = generateRandomDirection();
           steps.push(formatRotation(rot, dir));
-          currentHeading = applyRotation(
-            currentHeading,
-            rot,
-            dir === "R" ? "R" : "L"
-          );
+          currentHeading = applyRotation(currentHeading, rot, dir);
         }
-
-        // 3) Random final heading (multiples of 45: 0..315)
         let finalHeading = 45 * Math.floor(Math.random() * 8);
-
-        // 4) Compute correct minimal rotation
         let correctAnswer = getRotationFromTo(currentHeading, finalHeading);
 
-        // 5) Generate 4 random distractors
         let choices = [];
         function randomAnswer() {
           let deg = generateRandomMultipleOf45();
@@ -184,14 +164,11 @@
         }
         for (let i = 0; i < 4; i++) {
           let ans = randomAnswer();
-          // ensure no duplicates and not the correctAnswer
           while (choices.includes(ans) || ans === correctAnswer) {
             ans = randomAnswer();
           }
           choices.push(ans);
         }
-
-        // Place correct answer among the first 4 (a-d)
         let correctIndex = Math.floor(Math.random() * 4);
         choices[correctIndex] = correctAnswer;
 
@@ -201,19 +178,16 @@
           steps,
           finalHeading,
           correctAnswer,
-          realCorrectAnswer: correctAnswer, // store the real rotation in case we override with "None"
+          realCorrectAnswer: correctAnswer,
           choices,
         };
       }
 
-      // Generate all questions
       function generateAllQuestions(count = 30) {
         let questions = [];
         for (let i = 0; i < count; i++) {
           questions.push(generateQuestion(i + 1));
         }
-
-        // Enforce ~25% have correct answer "None"
         let noneCount = Math.floor(count * 0.25);
         let usedIndexes = [];
         while (usedIndexes.length < noneCount) {
@@ -222,14 +196,10 @@
             usedIndexes.push(r);
           }
         }
-
         usedIndexes.forEach((idx) => {
           let q = questions[idx];
-          // Save the actual rotation
           q.noneActualAnswer = q.correctAnswer;
-          // Overwrite correct answer with "None"
           q.correctAnswer = "None";
-          // Overwrite the 4 choices with random distractors that do NOT match q.noneActualAnswer
           let newChoices = [];
           while (newChoices.length < 4) {
             let ans = randomAnswer();
@@ -239,28 +209,22 @@
           }
           q.choices = newChoices;
         });
-
         return questions;
       }
 
-      // Random answer generator for the "None" scenario
       function randomAnswer() {
         let deg = generateRandomMultipleOf45();
         let dir = generateRandomDirection();
         return formatRotation(deg, dir);
       }
 
-      // Render the questions in HTML
       function renderQuestions(questions) {
         let html = "";
         questions.forEach((q) => {
           html += `
       <div class="card mb-3" id="question-${q.index}">
-        <div class="card-header">
-          Question ${q.index}
-        </div>
+        <div class="card-header">Question ${q.index}</div>
         <div class="card-body">
-          <!-- New layout: 7 items in a row with equal spacing -->
           <div class="d-flex justify-content-around align-items-center w-100 flex-wrap mb-3">
             <div class="p-1 text-center">
               <img src="airplane.png" class="airplane-icon" style="transform: rotate(${q.initialHeading}deg);" />
@@ -284,7 +248,6 @@
               <img src="airplane.png" class="airplane-icon" style="transform: rotate(${q.finalHeading}deg);" />
             </div>
           </div>
-
           <div class="btn-group-vertical w-100" role="group">
       `;
 
@@ -307,17 +270,13 @@
       </div>
       `;
         });
-
         $("#questions").html(html);
 
-        // Attach click handlers for each choice button
+        // Use .attr() to read the attributes so that type conversion issues are avoided
         $(".choice-btn").click(function () {
-          let qIndex = $(this).data("qindex");
-          let choiceValue = $(this).data("choice");
-          // store user selection
+          let qIndex = $(this).attr("data-qindex");
+          let choiceValue = $(this).attr("data-choice");
           userAnswers[qIndex] = choiceValue;
-
-          // visually mark selected button
           $(this)
             .closest(".btn-group-vertical")
             .find(".choice-btn")
@@ -326,14 +285,12 @@
         });
       }
 
-      // Timer functions
       function startTimer() {
         if (timerInterval) {
           clearInterval(timerInterval);
         }
         secondsElapsed = 0;
         $("#timer").text("00:00");
-
         timerInterval = setInterval(() => {
           secondsElapsed++;
           let minutes = Math.floor(secondsElapsed / 60);
@@ -355,23 +312,17 @@
         let questions = generateAllQuestions(30);
         renderQuestions(questions);
 
-        // Start timer
         $("#startTimer").click(function () {
           startTimer();
         });
 
-        // Submit button
         $("#submitBtn").click(function () {
           stopTimer();
-
-          // Evaluate answers
           let correctCount = 0;
           questions.forEach((q) => {
-            let selected = userAnswers[q.index] || null; // user’s choice or null if not chosen
+            let selected = userAnswers[String(q.index)] || null;
             let correct = q.correctAnswer;
             let questionCard = $(`#question-${q.index}`);
-
-            // Mark the card border
             if (selected === correct) {
               correctCount++;
               questionCard
@@ -382,28 +333,18 @@
                 .removeClass("border-success")
                 .addClass("border-danger");
             }
-
-            // Find all choice buttons in this question
-            let btnGroup = questionCard.find(".choice-btn");
-            btnGroup.each(function () {
-              let btnChoice = $(this).data("choice");
-              // Remove the 'active' class to reset after submission
+            questionCard.find(".choice-btn").each(function () {
+              let btnChoice = $(this).attr("data-choice");
               $(this).removeClass("active");
-
-              // If this button was the user’s selection
               if (btnChoice === selected) {
-                // correct or wrong highlight
                 if (selected === correct) {
                   $(this).addClass("correct");
                 } else {
                   $(this).addClass("wrong");
                 }
               }
-
-              // Always highlight the correct button in green
               if (btnChoice === correct) {
                 $(this).addClass("correct");
-                // If "None" is correct, also display the actual rotation
                 if (correct === "None" && q.noneActualAnswer) {
                   let labelText = $(this).text();
                   if (!labelText.includes("(Actual:")) {
@@ -416,25 +357,17 @@
             });
           });
 
-          // Calculate the percentage
           let totalQuestions = questions.length;
-          let percentage = ((correctCount / totalQuestions) * 100).toFixed(1); // 1 decimal
-
-          // Show results in modal
+          let percentage = ((correctCount / totalQuestions) * 100).toFixed(1);
           let minutes = Math.floor(secondsElapsed / 60);
           let seconds = secondsElapsed % 60;
           let mm = minutes < 10 ? "0" + minutes : minutes;
           let ss = seconds < 10 ? "0" + seconds : seconds;
           let timeString = `${mm}:${ss}`;
-
           let resultMsg = `Time: ${timeString}<br/>
                        Correct: ${correctCount}/${totalQuestions} (${percentage}%)`;
           $("#resultText").html(resultMsg);
-
-          // Scroll to top
           window.scrollTo(0, 0);
-
-          // Show modal
           $("#resultModal").modal("show");
         });
       });
